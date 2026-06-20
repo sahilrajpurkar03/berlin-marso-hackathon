@@ -1,0 +1,24 @@
+# @package _global_
+# RGB SAC: image + robot proprioception only (NO privileged state), off-policy RL from the
+# sparse +1-per-parcel reward, with the replay buffer pre-seeded by replaying the provided demo
+# actions through a real env instance (ground-truth reward, no hand reconstruction). Fixed image
+# input -> the SAME policy can run across difficulties.
+baseline_dir: sac
+script: sac_rgbd.py
+demo_kind: rgb
+flags:
+  obs_mode: rgb
+  num_envs: 16
+  num_eval_envs: 8
+  num_eval_steps: 100
+  total_timesteps: 500000
+  buffer_size: 300000
+  training_freq: 64
+  utd: 0.5
+  batch_size: 512
+  learning_starts: 4000
+  eval_freq: 25
+  log_freq: 1000
+  capture_video: true
+  num_seed_demos: 200
+  exp_name: warehouse_rgb_sac
