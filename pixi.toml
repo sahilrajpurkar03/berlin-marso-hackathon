@@ -11,6 +11,8 @@ install = "python -m ensurepip --upgrade && python -m pip install --upgrade pip 
 
 [dependencies]
 python = "3.12.*"
+pip = "*"
+setuptools = "<82"
 
 [pypi-dependencies]
 # pinned to exact versions — edit here, then re-run `pixi install` to update pixi.lock

@@ -567,10 +567,10 @@ if __name__ == "__main__":
 
     for cur_iter, data_batch in enumerate(train_dataloader):
         last_tick = time.time()
-        # copy data from cpu to gpu
+        # copy data to the selected training device
         obs_batch_dict = data_batch['observations']
-        obs_batch_dict = {k: v.cuda(non_blocking=True) for k, v in obs_batch_dict.items()}
-        act_batch = data_batch['actions'].cuda(non_blocking=True)
+        obs_batch_dict = {k: v.to(device, non_blocking=True) for k, v in obs_batch_dict.items()}
+        act_batch = data_batch['actions'].to(device, non_blocking=True)
 
         # forward and compute loss
         loss_dict = agent.compute_loss(

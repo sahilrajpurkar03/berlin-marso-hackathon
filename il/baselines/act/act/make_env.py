@@ -1,6 +1,7 @@
 from typing import Optional
 import gymnasium as gym
 import mani_skill.envs
+import warehouse_sort  # noqa: F401 (registers WarehouseSort-v1) -- vendor shim
 from mani_skill.utils import gym_utils
 from mani_skill.vector.wrappers.gymnasium import ManiSkillVectorEnv
 from mani_skill.utils.wrappers import RecordEpisode, CPUGymWrapper

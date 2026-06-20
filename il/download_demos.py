@@ -33,7 +33,13 @@ def _find_or_download(competition):
                 or glob.glob(os.path.join(p, "**/*.tar.gz"), recursive=True)):
             print("found attached Kaggle competition data:", p)
             return p
-    import kagglehub
+    try:
+        import kagglehub
+    except ImportError as exc:
+        raise ImportError(
+            "kagglehub is required to download demos outside Kaggle. "
+            "Install it with `pixi install` or add `kagglehub = \"*\"` to pixi.toml.`"
+        ) from exc
     return kagglehub.competition_download(competition)
 
 

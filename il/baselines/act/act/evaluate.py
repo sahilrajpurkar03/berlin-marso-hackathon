@@ -83,10 +83,16 @@ def evaluate(n: int, agent, eval_envs, eval_kwargs):
                 if isinstance(info["final_info"], dict):
                     for k, v in info["final_info"]["episode"].items():
                         eval_metrics[k].append(v.float().cpu().numpy())
+                    if "sort_accuracy" in info["final_info"]:
+                        eval_metrics["sort_accuracy"].append(
+                            info["final_info"]["sort_accuracy"].float().cpu().numpy()
+                        )
                 else:
                     for final_info in info["final_info"]:
                         for k, v in final_info["episode"].items():
                             eval_metrics[k].append(v)
+                        if "sort_accuracy" in final_info:
+                            eval_metrics["sort_accuracy"].append(final_info["sort_accuracy"])
                 # new episodes begin
                 eps_count += num_envs
                 ts = 0
