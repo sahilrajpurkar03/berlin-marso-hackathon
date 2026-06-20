@@ -11,14 +11,15 @@ flags:
   num_envs: 16
   num_eval_envs: 8
   num_eval_steps: 100
-  total_timesteps: 500000
+  total_timesteps: 50000  # GPU-bound at ~7.5 it/s on a T4 (97% util) -> ~1.5-2hr wall-clock;
+                           # 500k would take ~18hr, infeasible for a 1-day hackathon budget
   buffer_size: 60000  # 128x128 rgb (vs upstream's 64x64 RGB example) needs ~4x less buffer_size
                        # to fit GPU memory: obs+next_obs each store full rgb frames, ~98KB/transition
   training_freq: 64
   utd: 0.5
   batch_size: 512
   learning_starts: 4000
-  eval_freq: 10000
+  eval_freq: 5000
   log_freq: 1000
   capture_video: true
   num_seed_demos: 200
