@@ -60,6 +60,10 @@ class Args:
     """total timesteps of the experiment"""
     batch_size: int = 1024
     """the batch size of sample from the replay memory"""
+    obs_camera: str = "scene"
+    """Accepted for demo-replay compat; WarehouseSort only uses the fixed third-person scene camera."""
+    num_parcels: int = 2
+    """WarehouseSort scene knob (overridden by the demo's recorded env_kwargs when available)."""
 
     # ACT specific arguments
     lr: float = 1e-4
@@ -296,6 +300,7 @@ if __name__ == "__main__":
     else:
         run_name = args.exp_name
 
+    demo_info = None
     if args.demo_path.endswith('.h5'):
         import json
         json_file = args.demo_path[:-2] + 'json'
@@ -321,6 +326,16 @@ if __name__ == "__main__":
     env_kwargs = dict(control_mode=args.control_mode, reward_mode="sparse", obs_mode="state", render_mode="rgb_array")
     if args.max_episode_steps is not None:
         env_kwargs["max_episode_steps"] = args.max_episode_steps
+    # Match WarehouseSort eval to the demo distribution (parcel count, fixed poses,
+    # randomization, camera). This is required for medium/hard and held-out-compatible
+    # state shapes.
+    if args.env_id.startswith("WarehouseSort"):
+        env_kwargs.update(num_parcels=args.num_parcels, obs_camera=args.obs_camera)
+        if demo_info is not None:
+            demo_kwargs = demo_info["env_info"]["env_kwargs"]
+            for key in ("num_parcels", "fixed_poses", "randomization", "obs_camera"):
+                if key in demo_kwargs:
+                    env_kwargs[key] = demo_kwargs[key]
     other_kwargs = None
     envs = make_eval_envs(args.env_id, args.num_eval_envs, args.sim_backend, env_kwargs, other_kwargs, video_dir=f'runs/{run_name}/videos' if args.capture_video else None)
 
@@ -420,7 +435,7 @@ if __name__ == "__main__":
         timings["update"] += time.time() - last_tick
 
         # Evaluation
-        if cur_iter % args.eval_freq == 0:
+        if args.eval_freq is not None and cur_iter > 0 and cur_iter % args.eval_freq == 0:
             last_tick = time.time()
 
             ema.copy_to(ema_agent.parameters())
@@ -435,7 +450,7 @@ if __name__ == "__main__":
                 writer.add_scalar(f"eval/{k}", eval_metrics[k], cur_iter)
                 print(f"{k}: {eval_metrics[k]:.4f}")
 
-            save_on_best_metrics = ["success_once", "success_at_end"]
+            save_on_best_metrics = ["sort_accuracy", "success_once", "success_at_end"]
             for k in save_on_best_metrics:
                 if k in eval_metrics and eval_metrics[k] > best_eval_metrics[k]:
                     best_eval_metrics[k] = eval_metrics[k]

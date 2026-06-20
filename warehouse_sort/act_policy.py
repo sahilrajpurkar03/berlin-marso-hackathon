@@ -59,6 +59,78 @@ class _ACTPolicy:
         return action.clamp(-1.0, 1.0)
 
 
+class _ACTStatePolicy:
+    def __init__(self, agent, num_queries, act_horizon, device, norm_stats=None):
+        self.agent = agent.to(device).eval()
+        self.num_queries = num_queries
+        self.act_horizon = act_horizon
+        self.device = device
+        self.norm_stats = norm_stats
+        self._chunk = None
+        self._step = 0
+
+    def reset(self):
+        self._chunk = None
+        self._step = 0
+
+    def _prep_obs(self, obs):
+        state = (obs["state"] if isinstance(obs, dict) else obs).float().to(self.device)
+        if self.norm_stats:
+            mean = self.norm_stats["state_mean"].to(self.device)
+            std = self.norm_stats["state_std"].to(self.device)
+            state = (state - mean) / std
+        return state
+
+    @torch.no_grad()
+    def act(self, obs, deterministic=True):
+        if self._chunk is None or self._step >= self.act_horizon:
+            obs_in = self._prep_obs(obs)
+            self._chunk = self.agent.get_action(obs_in)
+            if self.norm_stats:
+                mean = self.norm_stats["action_mean"].to(self.device)
+                std = self.norm_stats["action_std"].to(self.device)
+                self._chunk = self._chunk * std + mean
+            self._step = 0
+        action = self._chunk[:, self._step]
+        self._step += 1
+        return action.clamp(-1.0, 1.0)
+
+
+def load_act_state(checkpoint, sample_obs, action_space, device,
+                   num_queries=30, act_horizon=None, hidden_dim=256,
+                   enc_layers=2, dec_layers=4, dim_feedforward=512,
+                   nheads=4, dropout=0.1, pre_norm=False,
+                   position_embedding="sine", masks=False, dilation=False,
+                   lr_backbone=1e-5, kl_weight=10):
+    """Load a state ACT checkpoint trained by il/baselines/act/train.py.
+
+    State checkpoints are level-specific because the state vector size depends on parcel count.
+    """
+    import types
+    _add_baseline_path("act")
+    from train import Agent
+
+    state = sample_obs["state"] if isinstance(sample_obs, dict) else sample_obs
+    state_dim = state.shape[1]
+    args = types.SimpleNamespace(
+        backbone="resnet18", num_queries=num_queries, hidden_dim=hidden_dim,
+        enc_layers=enc_layers, dec_layers=dec_layers, dim_feedforward=dim_feedforward,
+        nheads=nheads, dropout=dropout, pre_norm=pre_norm, position_embedding=position_embedding,
+        masks=masks, dilation=dilation, lr_backbone=lr_backbone, kl_weight=kl_weight,
+    )
+    stub = types.SimpleNamespace(
+        single_observation_space=types.SimpleNamespace(shape=(state_dim,)),
+        single_action_space=types.SimpleNamespace(shape=(action_space.shape[0],)),
+    )
+
+    agent = Agent(stub, args)
+    ckpt = torch.load(checkpoint, map_location=device, weights_only=False)
+    agent.load_state_dict(ckpt.get("ema_agent", ckpt.get("agent")))
+    return _ACTStatePolicy(
+        agent, num_queries, act_horizon or num_queries, device, norm_stats=ckpt.get("norm_stats")
+    )
+
+
 def load_act(checkpoint, sample_obs, action_space, device,
              backbone="resnet18", num_queries=30, act_horizon=None,
              hidden_dim=256, enc_layers=2, dec_layers=4, dim_feedforward=512,

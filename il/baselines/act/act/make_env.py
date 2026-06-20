@@ -38,7 +38,9 @@ def make_eval_envs(env_id, num_envs: int, sim_backend: str, env_kwargs: dict, ot
         env = vector_cls([cpu_make_env(env_id, seed, video_dir if seed == 0 else None, env_kwargs, other_kwargs) for seed in range(num_envs)])
     else:
         env = gym.make(env_id, num_envs=num_envs, sim_backend=sim_backend, reconfiguration_freq=1, **env_kwargs)
-        max_episode_steps = gym_utils.find_max_episode_steps_value(env)
+        max_episode_steps = env_kwargs.get(
+            "max_episode_steps", gym_utils.find_max_episode_steps_value(env)
+        )
         for wrapper in wrappers:
             env = wrapper(env)
         if video_dir:

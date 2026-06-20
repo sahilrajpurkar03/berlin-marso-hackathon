@@ -4,6 +4,8 @@
 
 # run outputs / checkpoints
 outputs/
+runs/
+*.pt
 
 # python
 __pycache__/
@@ -26,4 +28,3 @@ il/videos/
 
 # run logs (training/eval/gen stdout captured to files)
 *.log
-
