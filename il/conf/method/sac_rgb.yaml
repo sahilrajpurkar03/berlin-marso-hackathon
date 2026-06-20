@@ -12,7 +12,8 @@ flags:
   num_eval_envs: 8
   num_eval_steps: 100
   total_timesteps: 500000
-  buffer_size: 300000
+  buffer_size: 60000  # 128x128 rgb (vs upstream's 64x64 RGB example) needs ~4x less buffer_size
+                       # to fit GPU memory: obs+next_obs each store full rgb frames, ~98KB/transition
   training_freq: 64
   utd: 0.5
   batch_size: 512
