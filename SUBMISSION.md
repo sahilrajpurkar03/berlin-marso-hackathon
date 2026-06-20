@@ -15,7 +15,7 @@ it) — not just a checkpoint. We clone it and run your policy as-is.
 Your repo must contain:
 
 1. **Your policy entrypoint** — a `module:function` that loads your checkpoint and
-   returns a policy (the provided `warehouse_sort.il_policy:load_dp_rgb` already works;
+   returns a policy (the provided `warehouse_sort.il_policy:load_dp` already works;
    for a custom approach it's your own module — see §3).
 2. **Your checkpoint file(s)** — committed to the repo (or fetchable by a script in
    it). Reference them by path in the manifest.
@@ -38,7 +38,7 @@ ever calls your `load_fn` and `.act(obs)`.
                   │                    levels: {ckpt}          └─────────┬─────────┘
                   ▼                          │                            │
        warehouse_sort/il_policy.py ◄─────────┘                            ▼
-       load_dp_rgb(ckpt, obs, act, dev)                              sort_accuracy
+       load_dp(ckpt, obs, act, dev)                                  sort_accuracy
                   │                                                       ▲
                   ▼                                                       │
        policy.act(obs, deterministic=True) ─► action in [-1,1] ──────────┘
@@ -69,34 +69,34 @@ Key files:
 | File | Role |
 |------|------|
 | [warehouse_sort/env.py](warehouse_sort/env.py) | The `WarehouseSort-v1` env: scene, obs, sparse reward, `evaluate()` (success check) |
-| [warehouse_sort/il_policy.py](warehouse_sort/il_policy.py) | `load_dp_rgb` — reference policy entrypoint |
+| [warehouse_sort/il_policy.py](warehouse_sort/il_policy.py) | `load_dp` — reference policy entrypoint (state; `load_dp_rgb` for the image track) |
 | [warehouse_sort/utils.py](warehouse_sort/utils.py) | env construction, deterministic rollout, metrics |
 | [eval.py](eval.py) | evaluate a checkpoint on an eval config (**the exact interface used for scoring** — only the config differs) |
 | [conf/](conf/) | Hydra configs: `difficulty/{easy,medium,hard}.yaml`, `eval/default.yaml` |
 
 ---
 
-## 2. Run the provided template (RGB Diffusion Policy)
+## 2. Run the provided solution (state Diffusion Policy)
 
-This is the full image-IL pipeline, runnable end-to-end. It's a **template, not a solution** —
-out of the box it does **not** sort the parcels; making an image policy work is the challenge.
-Full detail in [il/README.md](il/README.md); the short version (the rgb demos — 200 episodes per
+This is the full state-IL pipeline, runnable end-to-end.
+Full detail in [il/README.md](il/README.md); the short version (the demos — 200 episodes per
 level — are the Kaggle competition data; mounted automatically on Kaggle, else fetched below):
 
 ```bash
 pixi install && pixi run install
 
-# fetch the rgb demo datasets (the Kaggle competition data) -> il/demos/<level>/
+# fetch the demo datasets (the Kaggle competition data) -> il/demos/<level>/
 pixi run python il/download_demos.py
 
-# train the RGB Diffusion Policy (one rgb checkpoint can run on all levels — fixed image input)
-pixi run python il/train.py method=dp_rgb demo_dir=easy
+# train the state Diffusion Policy — ONE checkpoint PER level (state is parcel-count-specific)
+pixi run python il/train.py method=dp demo_dir=easy   # then demo_dir=medium, demo_dir=hard
 ```
 
-> ⚠️ The provided demos are produced by a scripted controller, and using it to collect *more*
-> data is fine. But a scripted / hard-coded controller — or any policy that reads privileged env
-> state instead of acting from the observation — is **not a valid submission** and leads to
-> disqualification.
+> ⚠️ **Your submission must be a *learned* policy** (a parameterized model trained to map the
+> observation to actions). The provided demos come from a scripted controller, and using it to
+> collect *more* data is fine — but **submitting** a scripted / hard-coded / rule-based controller
+> (even one that only reads the provided observation), or anything that reads privileged simulator
+> state, is **not a valid submission** and leads to disqualification.
 
 Check progress any time with `eval.py` — the **exact same interface used for scoring**.
 You get `conf/eval/default.yaml` (same-distribution seeds); scoring swaps in a held-out
@@ -104,22 +104,23 @@ config (wider ranges, different seeds), but the pipeline is identical:
 
 ```bash
 pixi run python eval.py difficulty=easy \
-    policy=warehouse_sort.il_policy:load_dp_rgb \
-    checkpoint=il/baselines/diffusion_policy/runs/warehouse_rgb_dp/checkpoints/best_eval_sort_accuracy.pt \
+    policy=warehouse_sort.il_policy:load_dp \
+    checkpoint=il/baselines/diffusion_policy/runs/warehouse_state_dp_easy/checkpoints/best_eval_sort_accuracy.pt \
     eval_config=conf/eval/default.yaml
 ```
 
-To **continue improving**: train longer (`flags.total_iters=`), tune the visual encoder, record
-extra demos (optional — see [il/README.md](il/README.md)), or improve generalization to the
-held-out positions / bin-swaps (that's where the points are — hard is weighted 0.5).
+To **continue improving**: train longer (`flags.total_iters=`), tune the prediction horizon
+(`flags.pred_horizon=`), record extra demos (optional — see [il/README.md](il/README.md)), or
+improve generalization to the held-out positions / bin-swaps (hard is weighted 0.5).
 
 ---
 
 ## 3. Bring your own approach (any policy)
 
-You do **not** have to use Diffusion Policy. Any object satisfying the contract works
-— RL, a scripted controller, a transformer, anything. The minimal reference is
-[examples/random_policy.py](examples/random_policy.py):
+You do **not** have to use Diffusion Policy — any **learned** policy satisfying the contract works
+(behavior cloning, RL, a transformer, …). It just must be a trained observation→action model, not
+a hand-coded controller. The minimal reference for the *contract* (not a valid submission — it's
+random) is [examples/random_policy.py](examples/random_policy.py):
 
 ```python
 class RandomPolicy:
@@ -128,21 +129,21 @@ class RandomPolicy:
         self.device = device
 
     def act(self, obs, deterministic=True):
-        # obs is the rgb observation: a dict {"rgb": (N,128,128,3), "state": (N,26)}.
-        # Read ONLY the observation — no env access, no privileged fields.
-        n = obs["rgb"].shape[0]
+        # obs is the state vector (N, obs_dim) for the main track, or a dict
+        # {"rgb": (N,128,128,3), "state": (N,26)} for the image track. Read ONLY the obs.
+        n = (obs["rgb"] if isinstance(obs, dict) else obs).shape[0]
         return torch.rand((n, self.action_dim), device=self.device) * 2 - 1
 
 def load_policy(checkpoint, sample_obs, action_space, device):
     return RandomPolicy(action_space, device)
 ```
 
-Two rules your `load_fn` must follow (copy them from `il_policy.py:load_dp_rgb`):
+Two rules your `load_fn` must follow (copy them from `il_policy.py:load_dp`):
 
-1. **Build the model from `sample_obs` + `action_space`** — read the image/proprio shapes off
-   `sample_obs` (`sample_obs["rgb"]`, `sample_obs["state"]`) rather than hardcoding them.
+1. **Build the model from `sample_obs` + `action_space`** — size the network off `sample_obs`
+   (the state vector's dim depends on parcel count) rather than hardcoding shapes.
 2. **Load the checkpoint yourself** from the `checkpoint` path argument and move the
-   model to `device`. `load_dp_rgb` does exactly this:
+   model to `device`. `load_dp` does exactly this:
    ```python
    ckpt = torch.load(checkpoint, map_location=device, weights_only=False)
    sd = ckpt.get("ema_agent", ckpt.get("agent"))   # your own key/format is fine
@@ -164,21 +165,23 @@ declare the **list of difficulties** you want scored and the checkpoint for each
 
 ```yaml
 team: "team-name"
-policy: warehouse_sort.il_policy:load_dp_rgb   # obs→action entrypoint
+policy: warehouse_sort.il_policy:load_dp       # obs→action entrypoint
+obs_mode: state                                # state (main) or rgb (image track); default state
 
 levels:                                        # declare only the levels you want scored
-  easy:   { checkpoint: <path-to-ckpt> }
-  medium: { checkpoint: <path-to-ckpt> }
-  hard:   { checkpoint: <path-to-ckpt> }
+  easy:   { checkpoint: <path-to-easy-ckpt> }
+  medium: { checkpoint: <path-to-medium-ckpt> }
+  hard:   { checkpoint: <path-to-hard-ckpt> }
 ```
 
 - **List of difficulties** = the keys under `levels`. Omit a level → it scores 0
   (but its weight still counts: easy 0.2, medium 0.3, hard 0.5).
-- **checkpoint** — because the rgb observation has the same shape at every difficulty, the
-  **same checkpoint can serve all three levels**, or you can train per level and point each at
-  its own file.
-- **policy** can be overridden per level (e.g. a different approach on hard only).
-- The observation is always **rgb** (image challenge) — nothing to declare.
+- **checkpoint** — the state vector is parcel-count-specific, so train and point at **one
+  checkpoint per level** (easy/medium/hard each have their own).
+- **obs_mode** — `state` (main track, default) or `rgb` (optional image track). The judge runs
+  the env in this mode, so it must match what your policy expects.
+- **policy** can be overridden per level (e.g. a different approach on hard only). For the image
+  track set `policy: …:load_dp_rgb` and `obs_mode: rgb`.
 
 ## Scoring
 

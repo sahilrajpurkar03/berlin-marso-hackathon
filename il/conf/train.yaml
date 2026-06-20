@@ -1,11 +1,12 @@
 # Hydra config for the IL training dispatcher (il/train.py).
-# This is an IMAGE challenge -> the default method is the RGB Diffusion Policy.
+# Main track is STATE (default method=dp); dp_rgb is the optional image track.
 # Pick a method with method=... and override any hyperparameter on the CLI, e.g.
-#   pixi run python il/train.py                              # default: dp_rgb (image DP)
-#   pixi run python il/train.py method=dp_rgb flags.total_iters=8000 flags.eval_freq=4000
+#   pixi run python il/train.py                              # default: dp (state DP, main track)
+#   pixi run python il/train.py method=dp_rgb               # optional image track
+#   pixi run python il/train.py method=dp flags.total_iters=8000 flags.pred_horizon=32
 defaults:
   - _self_
-  - method: dp_rgb   # method config (@package _global_) overrides the shared defaults above
+  - method: dp   # default: state Diffusion Policy (main track)
 
 # shared across all methods
 env_id: WarehouseSort-v1

@@ -1,15 +1,17 @@
 # Imitation Learning — WarehouseSort
 
-This is an **image** challenge. The IL pipeline follows ManiSkill 3's standard approach:
-**demos → train RGB Diffusion Policy → evaluate via eval.py**. The RGB DP is provided as a
-runnable **template** — it does not yet solve the task; making an image policy work is the point.
+Main track is **state-based**. The IL pipeline follows ManiSkill 3's standard approach:
+**demos → train state Diffusion Policy → evaluate via eval.py**. A state DP runs end-to-end as a
+starting point. An optional **RGB** image track is also provided as a template
+(`method=dp_rgb`, `load_dp_rgb`) — harder, not yet solving the task.
 
 ---
 
 ## Step 1 — Demonstrations (provided)
 
-**You don't need to record anything.** We provide pre-recorded **rgb** demos for every level
-(**200 episodes per level**) as the [Kaggle competition
+**You don't need to record anything.** We provide pre-recorded demos for every level
+(**200 episodes per level**, `state` for the main track + `rgb` for the image track) as the
+[Kaggle competition
 data](https://www.kaggle.com/competitions/marso-hack-berlin-2026-robot-parcel-sorting-challenge/data).
 
 - **On Kaggle**: the competition data is mounted under `/kaggle/input/` automatically.
@@ -62,28 +64,30 @@ Useful flags: `--no-replay` (raw demos only), `--no-media` (skip the mp4/gif), `
 ## Step 2 — Train
 
 ```bash
-pixi run python il/train.py method=dp_rgb demo_dir=easy      # RGB Diffusion Policy (the template)
+pixi run python il/train.py method=dp demo_dir=easy        # state Diffusion Policy (main track)
 ```
 
-To train on a different level pass `demo_dir=<level>`:
+Train each level separately (state is parcel-count-specific → **one checkpoint per level**):
 ```bash
-pixi run python il/train.py method=dp_rgb demo_dir=medium
+pixi run python il/train.py method=dp demo_dir=medium
+pixi run python il/train.py method=dp demo_dir=hard
 ```
 
-Override any hyperparameter on the CLI:
+Override any hyperparameter on the CLI (e.g. a longer prediction horizon):
 ```bash
-pixi run python il/train.py method=dp_rgb flags.total_iters=50000 flags.eval_freq=5000
+pixi run python il/train.py method=dp flags.total_iters=50000 flags.pred_horizon=32
 ```
 
-Checkpoints land at `il/baselines/diffusion_policy/runs/<exp_name>/checkpoints/` (the rgb
-method's `exp_name` is `warehouse_rgb_dp`).
+Checkpoints land at `il/baselines/diffusion_policy/runs/<exp_name>/checkpoints/` (the state
+method's default `exp_name` is `warehouse_state_dp_easy`). For the optional image track use
+`method=dp_rgb`.
 
 **Datasets in a custom location** (e.g. the mounted Kaggle competition data, not `il/demos/`): pass `demo_path=`
 the full path to the `.h5` — keep the matching `.json` in the same folder:
 
 ```bash
-pixi run python il/train.py method=dp_rgb \
-    demo_path=/kaggle/input/<dataset>/trajectory.rgb.pd_ee_delta_pos.physx_cuda.h5
+pixi run python il/train.py method=dp \
+    demo_path=/kaggle/input/<competition>/easy/trajectory.state.pd_ee_delta_pos.physx_cuda.h5
 ```
 
 ---
@@ -92,25 +96,26 @@ pixi run python il/train.py method=dp_rgb \
 
 ```bash
 pixi run python eval.py difficulty=easy \
-    policy=warehouse_sort.il_policy:load_dp_rgb \
-    checkpoint=il/baselines/diffusion_policy/runs/warehouse_rgb_dp/checkpoints/best_eval_sort_accuracy.pt \
+    policy=warehouse_sort.il_policy:load_dp \
+    checkpoint=il/baselines/diffusion_policy/runs/warehouse_state_dp_easy/checkpoints/best_eval_sort_accuracy.pt \
     eval_config=conf/eval/default.yaml
 ```
 
-The rgb observation has the **same shape at every difficulty**, so one trained checkpoint can be
-evaluated on easy, medium, and hard.
+Use the matching per-level checkpoint for `difficulty=medium` / `difficulty=hard`.
 
 ---
 
-## Results
+## Training time
 
-The provided RGB Diffusion Policy is a **runnable template, not a solution** — at default
-settings it does **not** sort the parcels (sort accuracy ≈ 0). Getting an image policy to work
-is the challenge.
+Rough training time for the provided **state** Diffusion Policy at default settings (single modern
+GPU, e.g. Colab T4). The optional image (rgb) track is a template that does not yet solve the task.
 
-| method | obs | default iters | approx. train time | status |
-|--------|-----|:---:|:---:|---|
-| Diffusion Policy | rgb (scene cam) | 30k | ~30–90 min | template — does not yet solve |
+| method | obs | level | default iters | approx. train time |
+|--------|-----|-------|:---:|:---:|
+| DP | state | easy   | 30k | ~20–40 min |
+| DP | state | medium | 50k | ~40–70 min |
+| DP | state | hard   | 60k | ~50–90 min |
+| DP | rgb (scene) | any | 30k | ~30–90 min |
 
 (Training time is for a single modern GPU, e.g. Colab T4.)
 

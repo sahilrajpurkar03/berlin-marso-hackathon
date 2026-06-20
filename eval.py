@@ -6,8 +6,7 @@ The interface here is IDENTICAL to the held-out judging harness.
   python eval.py difficulty=hard checkpoint=<path> eval_config=judge/heldout.yaml
 
 Critical behaviour:
-  * This is an IMAGE challenge: the observation is the scene-camera rgb image + robot
-    proprioception (obs_mode=rgb, the default for every difficulty).
+  * Main track is STATE (obs_mode=state, the default); rgb is the optional image track.
   * Fully driven by the `eval_config` file: it supplies n_episodes, the seed list, and
     (optionally) randomisation-range OVERRIDES. Nothing about the eval conditions is
     hardcoded here.
