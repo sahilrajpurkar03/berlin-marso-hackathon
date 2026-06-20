@@ -1,0 +1,23 @@
+# @package _global_
+# RGB ACT (Action Chunking Transformer, CVAE + DETR backbone): image + robot proprioception only
+# (NO privileged state, NO depth -- WarehouseSort's obs contract has no 'depth' key). Resizes the
+# 128x128 scene camera up to 224x224 internally for the ImageNet-pretrained ResNet18 backbone.
+baseline_dir: act
+script: train_rgbd.py
+demo_kind: rgb
+flags:
+  include_depth: false
+  obs_camera: scene
+  backbone: resnet18
+  num_queries: 30
+  temporal_agg: true
+  total_iters: 30000
+  batch_size: 32  # DETR+CVAE on 224x224 images is far heavier per-sample than DP/SAC's CNNs
+  lr: 1e-4
+  kl_weight: 10
+  num_eval_envs: 4
+  num_eval_episodes: 8
+  eval_freq: 5000
+  log_freq: 1000
+  capture_video: true
+  exp_name: warehouse_rgb_act

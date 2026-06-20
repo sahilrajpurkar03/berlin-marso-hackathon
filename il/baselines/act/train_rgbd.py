@@ -53,7 +53,7 @@ class Args:
     capture_video: bool = True
     """whether to capture videos of the agent performances (check out `videos` folder)"""
 
-    env_id: str = "PickCube-v1"
+    env_id: str = "WarehouseSort-v1"
     """the id of the environment"""
     demo_path: str = 'pickcube.trajectory.rgbd.pd_joint_delta_pos.cpu.h5'
     """the path of demo dataset (pkl or h5)"""
@@ -63,6 +63,10 @@ class Args:
     """total timesteps of the experiment"""
     batch_size: int = 256
     """the batch size of sample from the replay memory"""
+    obs_camera: str = "scene"
+    """Accepted for demo-replay compat; WarehouseSort only uses the fixed third-person scene camera."""
+    num_parcels: int = 2
+    """WarehouseSort scene knob (overridden by the demo's recorded env_kwargs when available)."""
 
     # ACT specific arguments
     lr: float = 1e-4
@@ -78,7 +82,8 @@ class Args:
     lr_backbone: float = 1e-5
     masks: bool = False
     dilation: bool = False
-    include_depth: bool = True
+    include_depth: bool = False
+    """WarehouseSort is an RGB-only task (obs contract has no 'depth' key) -- must be False."""
 
     # Transformer
     enc_layers: int = 2
@@ -469,6 +474,16 @@ if __name__ == "__main__":
     env_kwargs = dict(control_mode=args.control_mode, reward_mode="sparse", obs_mode="rgbd" if args.include_depth else "rgb", render_mode="rgb_array")
     if args.max_episode_steps is not None:
         env_kwargs["max_episode_steps"] = args.max_episode_steps
+    # Match the eval env to the demo distribution: pull the WarehouseSort scene kwargs straight
+    # from the demo's recorded env_kwargs (num parcels, fixed_poses, randomization, obs_camera)
+    # so eval renders exactly what the policy was trained on (no manual flag duplication).
+    if args.env_id.startswith("WarehouseSort"):
+        env_kwargs.update(num_parcels=args.num_parcels, obs_camera=args.obs_camera)
+        if args.demo_path.endswith(".h5"):
+            _dk = demo_info["env_info"]["env_kwargs"]
+            for _k in ("num_parcels", "fixed_poses", "randomization", "obs_camera"):
+                if _k in _dk:
+                    env_kwargs[_k] = _dk[_k]
     other_kwargs = None
     wrappers = [partial(FlattenRGBDObservationWrapper, depth=args.include_depth)]
     envs = make_eval_envs(args.env_id, args.num_eval_envs, args.sim_backend, env_kwargs, other_kwargs, video_dir=f'runs/{run_name}/videos' if args.capture_video else None, wrappers=wrappers)
@@ -589,7 +604,7 @@ if __name__ == "__main__":
                 writer.add_scalar(f"eval/{k}", eval_metrics[k], cur_iter)
                 print(f"{k}: {eval_metrics[k]:.4f}")
 
-            save_on_best_metrics = ["success_once", "success_at_end"]
+            save_on_best_metrics = ["sort_accuracy", "success_once", "success_at_end"]
             for k in save_on_best_metrics:
                 if k in eval_metrics and eval_metrics[k] > best_eval_metrics[k]:
                     best_eval_metrics[k] = eval_metrics[k]
