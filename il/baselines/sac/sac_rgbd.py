@@ -437,14 +437,63 @@ class Logger:
         self.writer.close()
 
 
+def _cache_path(demo_path: str, num_seed_demos: Optional[int]):
+    n = "all" if num_seed_demos is None else str(num_seed_demos)
+    return demo_path[:-len(".h5")] + f".sac_seed_cache_{n}.pt"
+
+
+def _write_flat_into_buffer(rb: ReplayBuffer, flat):
+    """Write a flat list of (obs, next_obs, action, reward, done) dict/tensors sequentially
+    into rb at consecutive (pos, env_idx) slots, independent of which live env produced them
+    (sampling later is fully random over (pos, env_idx), so trajectory identity doesn't matter)."""
+    capacity = rb.per_env_buffer_size * rb.num_envs
+    flat_idx = 0
+    for o, no, action, reward, done in flat:
+        if flat_idx >= capacity:
+            break
+        pos, env_idx = flat_idx // rb.num_envs, flat_idx % rb.num_envs
+        for k, v in o.items():
+            rb.obs.data[k][pos, env_idx] = v.to(rb.storage_device)
+        for k, v in no.items():
+            rb.next_obs.data[k][pos, env_idx] = v.to(rb.storage_device)
+        rb.actions[pos, env_idx] = action.to(rb.storage_device)
+        rb.rewards[pos, env_idx] = reward.to(rb.storage_device)
+        rb.dones[pos, env_idx] = done.to(rb.storage_device)
+        flat_idx += 1
+    rb.pos = (flat_idx + rb.num_envs - 1) // rb.num_envs
+    if rb.pos >= rb.per_env_buffer_size:
+        rb.pos = 0
+        rb.full = True
+    return flat_idx
+
+
 def seed_replay_buffer_from_demos(rb: ReplayBuffer, demo_path: str, env_id: str, env_kwargs: dict,
-                                   device, num_seed_demos: Optional[int] = None):
+                                   device, num_seed_demos: Optional[int] = None, use_cache: bool = True):
     """Replay recorded WarehouseSort demo actions through a real (single-env) instance of the
     SAME env config to get ground-truth (obs, next_obs, action, reward, done) transitions, and
     pre-fill the SAC replay buffer with them before online training starts. Uses the live env's
     actual reward function (compute_sparse_reward / evaluate()) rather than hand-reconstructing
     it, since the demo .h5 itself only stores actions/observations, not per-step reward.
+
+    Replaying ~200 demos takes ~15-20min (one real env step per action). Since there's no
+    training-resume support in this script, every restart re-pays that cost unless cached --
+    so the resulting transitions are cached to disk on first run and loaded directly (a few
+    seconds) on subsequent runs against the same demo_path/num_seed_demos.
     """
+    cache_path = _cache_path(demo_path, num_seed_demos)
+    if use_cache and os.path.exists(cache_path):
+        print(f"[seed] loading cached demo transitions from {cache_path}")
+        cached = torch.load(cache_path, map_location="cpu", weights_only=False)
+        flat = list(zip(cached["obs"], cached["next_obs"], cached["actions"],
+                         cached["rewards"], cached["dones"]))
+        flat_idx = _write_flat_into_buffer(rb, flat)
+        capacity = rb.per_env_buffer_size * rb.num_envs
+        print(f"[seed] loaded {flat_idx} cached demo transitions into replay buffer "
+              f"({flat_idx / capacity * 100:.1f}% of capacity), "
+              f"total reward across demos: {cached['total_reward']:.1f} "
+              f"(avg {cached['total_reward'] / max(cached['n_demos'], 1):.2f}/episode)")
+        return flat_idx
+
     json_path = demo_path[:-len(".h5")] + ".json"
     with open(json_path) as f:
         meta = json.load(f)
@@ -459,6 +508,7 @@ def seed_replay_buffer_from_demos(rb: ReplayBuffer, demo_path: str, env_id: str,
     episodes = meta["episodes"]
     n_demos = len(episodes) if num_seed_demos is None else min(num_seed_demos, len(episodes))
     capacity = rb.per_env_buffer_size * rb.num_envs
+    obs_cache, next_obs_cache, action_cache, reward_cache, done_cache = [], [], [], [], []
     flat_idx = 0
     total_reward = 0.0
     for i in tqdm.tqdm(range(n_demos), desc="seeding replay buffer from demos"):
@@ -477,19 +527,22 @@ def seed_replay_buffer_from_demos(rb: ReplayBuffer, demo_path: str, env_id: str,
             done = (terminated | truncated).float()
             total_reward += reward.sum().item()
 
-            pos, env_idx = flat_idx // rb.num_envs, flat_idx % rb.num_envs
-            o = {k: v[0] for k, v in obs.items()}
-            no = {k: v[0] for k, v in next_obs.items()}
-            if rb.storage_device == torch.device("cpu"):
-                o = {k: v.cpu() for k, v in o.items()}
-                no = {k: v.cpu() for k, v in no.items()}
+            o = {k: v[0].cpu() for k, v in obs.items()}
+            no = {k: v[0].cpu() for k, v in next_obs.items()}
+            a, r, d = action[0].cpu(), reward[0].cpu(), done[0].cpu()
+            obs_cache.append(o)
+            next_obs_cache.append(no)
+            action_cache.append(a)
+            reward_cache.append(r)
+            done_cache.append(d)
+
             for k, v in o.items():
-                rb.obs.data[k][pos, env_idx] = v
+                rb.obs.data[k][flat_idx // rb.num_envs, flat_idx % rb.num_envs] = v.to(rb.storage_device)
             for k, v in no.items():
-                rb.next_obs.data[k][pos, env_idx] = v
-            rb.actions[pos, env_idx] = action[0].to(rb.storage_device)
-            rb.rewards[pos, env_idx] = reward[0].to(rb.storage_device)
-            rb.dones[pos, env_idx] = done[0].to(rb.storage_device)
+                rb.next_obs.data[k][flat_idx // rb.num_envs, flat_idx % rb.num_envs] = v.to(rb.storage_device)
+            rb.actions[flat_idx // rb.num_envs, flat_idx % rb.num_envs] = a.to(rb.storage_device)
+            rb.rewards[flat_idx // rb.num_envs, flat_idx % rb.num_envs] = r.to(rb.storage_device)
+            rb.dones[flat_idx // rb.num_envs, flat_idx % rb.num_envs] = d.to(rb.storage_device)
 
             obs = next_obs
             flat_idx += 1
@@ -501,6 +554,14 @@ def seed_replay_buffer_from_demos(rb: ReplayBuffer, demo_path: str, env_id: str,
     print(f"[seed] loaded {flat_idx} demo transitions from {n_demos} episodes "
           f"into replay buffer ({flat_idx / capacity * 100:.1f}% of capacity), "
           f"total reward across demos: {total_reward:.1f} (avg {total_reward / max(n_demos,1):.2f}/episode)")
+
+    if use_cache:
+        torch.save({
+            "obs": obs_cache, "next_obs": next_obs_cache, "actions": action_cache,
+            "rewards": reward_cache, "dones": done_cache,
+            "total_reward": total_reward, "n_demos": n_demos,
+        }, cache_path)
+        print(f"[seed] cached {flat_idx} transitions to {cache_path} for instant reload next run")
     return flat_idx
 
 
