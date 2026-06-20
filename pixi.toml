@@ -4,9 +4,16 @@ name = "marso_hackathon"
 platforms = ["linux-64"]
 version = "0.1.0"
 
+[activation.env]
+# WSL2's GPU passthrough driver ships libcuda.so here, but the path isn't on the
+# default dynamic linker search path, so SAPIEN's ctypes.CDLL("libcuda.so") fails
+# without it. Scoped to this pixi env only (via [activation.env]).
+LD_LIBRARY_PATH = "/usr/lib/wsl/lib"
+
 [tasks]
 test = "python test.py"
 eval = "python eval.py"
+install = "python -m ensurepip --upgrade && python -m pip install --upgrade pip && python -m pip install -e ."
 
 [dependencies]
 python = "3.12.*"
@@ -26,4 +33,5 @@ transforms3d   = "==0.4.2"
 tyro           = "*"
 matplotlib     = "*"
 tensorboard    = "*"
+kagglehub      = "*"
 warehouse_sort = {path = ".", editable = true}
