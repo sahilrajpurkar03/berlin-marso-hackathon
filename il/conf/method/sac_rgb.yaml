@@ -20,6 +20,11 @@ flags:
                             # = 23000 transitions); combined with buffer_size, same ~60k total as
                             # the single-buffer version that was already validated to fit GPU memory
   demo_ratio: 0.5  # RLPD-style: 50% of every training batch always sampled from the demo buffer
+  gamma: 0.99  # upstream default (0.8) gives an effective horizon of ~20-30 steps (0.8^115≈7.6e-12,
+               # i.e. zero) -- far short of our ~115-200 step episodes, so reward could never
+               # propagate back to early-episode states. 0.99^115≈0.32, actually reaches across
+               # an episode. This (not buffer composition) is the likely real root cause of the
+               # observed Q-value decay toward 0 regardless of RLPD fixes.
   training_freq: 64
   utd: 0.5
   batch_size: 512
