@@ -1,0 +1,30 @@
+# @package _global_
+# State SAC (MAIN track): privileged low-dim state obs, off-policy RL from the sparse
+# +1-per-parcel reward, with the replay buffer pre-seeded by replaying the provided demo
+# actions through a real env instance (ground-truth reward, no hand reconstruction). State
+# vectors are tiny vs rgb frames, so seeding is fast and the replay buffer can be large.
+# State is parcel-count-specific -> train one checkpoint PER level (same as dp.yaml).
+baseline_dir: sac
+script: sac.py
+demo_kind: rgb  # only the recorded ACTIONS are used (see seed_replay_buffer_from_demos in sac.py);
+                # any existing demo file works regardless of which obs mode it was recorded in
+flags:
+  num_envs: 16
+  num_eval_envs: 8
+  num_eval_steps: 200  # must reach max_episode_steps since eval envs use ignore_terminations
+                        # (always run to full length) -- shorter and no episode ever completes
+  total_timesteps: 50000
+  buffer_size: 200000  # online buffer; state vectors are tiny so this is generous, unlike rgb
+  demo_buffer_size: 30000  # separate, never-overwritten demo buffer
+  demo_ratio: 0.5  # RLPD-style: 50% of every training batch always sampled from the demo buffer
+  gamma: 0.95  # validated middle ground (0.8 decayed Q to 0, 0.99 caused runaway divergence) --
+               # see the rgb SAC baseline's diagnostic history in il/baselines/sac/sac_rgbd.py
+  training_freq: 64
+  utd: 0.5
+  batch_size: 512
+  learning_starts: 4000
+  eval_freq: 5000
+  log_freq: 1000
+  capture_video: true
+  num_seed_demos: 200
+  exp_name: warehouse_state_sac_easy
