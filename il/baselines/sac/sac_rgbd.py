@@ -143,6 +143,13 @@ class Args:
     """cap on how many demo episodes to replay for seeding (None = use all in the demo file)"""
     max_episode_steps: int = 200
     """env max episode steps (shared with the rest of the repo's config)"""
+    demo_buffer_size: int = 25000
+    """capacity of the SEPARATE demo replay buffer (never overwritten by online data -- see
+    demo_ratio). Must be >= the actual number of seeded demo transitions or some get dropped."""
+    demo_ratio: float = 0.5
+    """RLPD-style 50/50 batch composition: fraction of each training batch sampled from the
+    demo buffer (rest from the online buffer), kept constant for the whole run regardless of
+    how much online data accumulates -- prevents the demo data's influence from diluting away."""
 
     # to be filled in runtime
     grad_steps_per_iteration: int = 0
@@ -331,11 +338,16 @@ class EncoderObsWrapper(nn.Module):
         img = img.permute(0, 3, 1, 2) # (B, C, H, W)
         return self.encoder(img)
 
-def make_mlp(in_channels, mlp_channels, act_builder=nn.ReLU, last_act=True):
+def make_mlp(in_channels, mlp_channels, act_builder=nn.ReLU, last_act=True, layer_norm=False):
     c_in = in_channels
     module_list = []
     for idx, c_out in enumerate(mlp_channels):
         module_list.append(nn.Linear(c_in, c_out))
+        is_last = idx == len(mlp_channels) - 1
+        if layer_norm and not is_last:
+            # RLPD: LayerNorm in the critic MLP counters Q-value overestimation/extrapolation
+            # error from off-policy bootstrapping on a mix of offline (demo) and online data.
+            module_list.append(nn.LayerNorm(c_out))
         if last_act or idx < len(mlp_channels) - 1:
             module_list.append(act_builder())
         c_in = c_out
@@ -347,7 +359,7 @@ class SoftQNetwork(nn.Module):
         self.encoder = encoder
         action_dim = np.prod(envs.single_action_space.shape)
         state_dim = envs.single_observation_space['state'].shape[0]
-        self.mlp = make_mlp(encoder.encoder.out_dim+action_dim+state_dim, [512, 256, 1], last_act=False)
+        self.mlp = make_mlp(encoder.encoder.out_dim+action_dim+state_dim, [512, 256, 1], last_act=False, layer_norm=True)
 
     def forward(self, obs, action, visual_feature=None, detach_encoder=False):
         if visual_feature is None:
@@ -657,17 +669,44 @@ if __name__ == "__main__":
         print("Running evaluation")
 
     envs.single_observation_space.dtype = np.float32
-    rb = ReplayBuffer(
+    # RLPD-style split: a SEPARATE, never-overwritten demo buffer + a growing online buffer,
+    # sampled 50/50 per batch (see demo_ratio) so the demo data's influence doesn't dilute away
+    # as online steps accumulate (the original single-shared-buffer version let the actor drift
+    # away from the seeded behavior -- Q-values monotonically decayed toward 0 instead of toward
+    # the demo-level reward).
+    online_rb = ReplayBuffer(
         env=envs,
         num_envs=args.num_envs,
         buffer_size=args.buffer_size,
         storage_device=torch.device(args.buffer_device),
         sample_device=device
     )
+    demo_rb = ReplayBuffer(
+        env=envs,
+        num_envs=args.num_envs,
+        buffer_size=args.demo_buffer_size,
+        storage_device=torch.device(args.buffer_device),
+        sample_device=device
+    )
 
     if args.demo_path is not None and not args.evaluate:
-        seed_replay_buffer_from_demos(rb, args.demo_path, args.env_id, env_kwargs, device,
+        seed_replay_buffer_from_demos(demo_rb, args.demo_path, args.env_id, env_kwargs, device,
                                        num_seed_demos=args.num_seed_demos)
+
+    def sample_batch(batch_size):
+        online_has_data = online_rb.full or online_rb.pos > 0
+        if not online_has_data:
+            return demo_rb.sample(batch_size)
+        n_demo = int(round(batch_size * args.demo_ratio))
+        n_online = batch_size - n_demo
+        d, o = demo_rb.sample(n_demo), online_rb.sample(n_online)
+        return ReplayBufferSample(
+            obs={k: torch.cat([d.obs[k], o.obs[k]], dim=0) for k in d.obs},
+            next_obs={k: torch.cat([d.next_obs[k], o.next_obs[k]], dim=0) for k in d.next_obs},
+            actions=torch.cat([d.actions, o.actions], dim=0),
+            rewards=torch.cat([d.rewards, o.rewards], dim=0),
+            dones=torch.cat([d.dones, o.dones], dim=0),
+        )
 
     # TRY NOT TO MODIFY: start the game
     obs, info = envs.reset(seed=args.seed) # in Gymnasium, seed is given to reset() instead of seed()
@@ -704,7 +743,7 @@ if __name__ == "__main__":
 
     global_step = 0
     global_update = 0
-    learning_has_started = rb.pos > 0 or rb.full  # seeded buffer already has data to learn from
+    learning_has_started = demo_rb.pos > 0 or demo_rb.full  # demo buffer already has data to learn from
 
     global_steps_per_iteration = args.num_envs * (args.steps_per_env)
     pbar = tqdm.tqdm(range(args.total_timesteps))
@@ -803,7 +842,7 @@ if __name__ == "__main__":
                 for k, v in final_info["episode"].items():
                     logger.add_scalar(f"train/{k}", v[done_mask].float().mean(), global_step)
 
-            rb.add(obs, real_next_obs, actions, rewards, stop_bootstrap)
+            online_rb.add(obs, real_next_obs, actions, rewards, stop_bootstrap)
 
             # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
             obs = next_obs
@@ -819,7 +858,7 @@ if __name__ == "__main__":
         learning_has_started = True
         for local_update in range(args.grad_steps_per_iteration):
             global_update += 1
-            data = rb.sample(args.batch_size)
+            data = sample_batch(args.batch_size)
 
             # update the value networks
             with torch.no_grad():

@@ -14,8 +14,12 @@ flags:
                         # (always run to full length) -- shorter and no episode ever completes
   total_timesteps: 50000  # GPU-bound at ~7.5 it/s on a T4 (97% util) -> ~1.5-2hr wall-clock;
                            # 500k would take ~18hr, infeasible for a 1-day hackathon budget
-  buffer_size: 60000  # 128x128 rgb (vs upstream's 64x64 RGB example) needs ~4x less buffer_size
-                       # to fit GPU memory: obs+next_obs each store full rgb frames, ~98KB/transition
+  buffer_size: 36000  # ONLINE buffer only now (separate from demo_buffer_size below) -- 128x128 rgb
+                       # needs ~4x less capacity than upstream's 64x64 example to fit GPU memory
+  demo_buffer_size: 24000  # separate, never-overwritten demo buffer (easy has 200 eps x 115 steps
+                            # = 23000 transitions); combined with buffer_size, same ~60k total as
+                            # the single-buffer version that was already validated to fit GPU memory
+  demo_ratio: 0.5  # RLPD-style: 50% of every training batch always sampled from the demo buffer
   training_freq: 64
   utd: 0.5
   batch_size: 512
