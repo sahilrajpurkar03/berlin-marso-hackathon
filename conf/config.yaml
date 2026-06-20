@@ -10,9 +10,9 @@ device: cuda
 control_mode: pd_ee_delta_pos
 max_episode_steps: 200
 
-# observation mode. This is an IMAGE challenge: the observation is the scene-camera rgb image
-# plus robot proprioception. Defaults to rgb for every difficulty.
-obs_mode: rgb
+# observation mode (state | rgb). Main track is STATE (privileged low-dim state vector);
+# rgb (scene image + proprioception) is the optional image track.
+obs_mode: state
 
 camera:
   width: 128

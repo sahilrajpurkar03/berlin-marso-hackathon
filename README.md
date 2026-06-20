@@ -20,24 +20,28 @@ color-matched bins — left panel is the scene view, right panel is the policy's
 
 ---
 
-## 🏁 The challenge — image-based sorting
+## 🏁 The challenge — state-based sorting
 
-This is an **image challenge**: your policy sees only a fixed scene-camera **RGB image** plus the
-robot's **proprioception** (joint/TCP state) — **no** privileged parcel or bin coordinates. It
-must read the colors from pixels and act.
+The **main track is state-based**: your policy reads the **privileged low-dim state vector**
+(robot proprioception + parcel poses & tag colors + bin positions & colors) and outputs actions.
+A complete **state Diffusion Policy pipeline** is provided — download demos → train → eval,
+runnable end-to-end. It's your starting point, not a finished solution — your job is to improve it
+and generalize across levels and the held-out layouts.
 
-A complete **RGB Diffusion Policy pipeline** is provided as a **template** — download demos →
-train → eval, runnable end-to-end. **It does not yet solve the task**; getting it to work is the
-point of the challenge. **Any approach is welcome** — imitation learning on the provided demos,
-reinforcement learning from the sparse `+1` reward, or anything else — as long as your policy
-**acts from the observation** (see [SUBMISSION.md](SUBMISSION.md) for the contract).
+**Any _learned_ approach is welcome** — imitation learning on the provided demos, reinforcement
+learning from the sparse `+1` reward, or anything else (see [SUBMISSION.md](SUBMISSION.md) for the
+contract).
 
-The harder challenge is to generalize across the difficulty levels and to the unseen layouts
-(new positions, bin side assignments) in the held-out configs.
+> 🔭 **Optional image track.** If you want a harder, more realistic challenge, an RGB Diffusion
+> Policy template is also provided (policy sees only a scene-camera image + proprioception). It is
+> not yet solving the task — try it after the state track. See [il/README.md](il/README.md).
 
-> ⚠️ **Scripted / hard-coded controllers are not valid submissions.** We use a scripted policy
-> only to *generate the demonstrations*; submitting one (or any policy that reads privileged env
-> state directly instead of acting from the observation) is grounds for **disqualification**.
+> ⚠️ **Every submission must be a *learned* policy** — a parameterized model trained to map the
+> **observation → action**. Hand-coded / scripted / rule-based controllers are **not allowed**,
+> even though the state observation would make one easy to write — we use a scripted policy *only*
+> to generate the demonstrations. Anything that is not a learned observation→action mapping (or
+> that reads privileged simulator state outside the provided observation) is grounds for
+> **disqualification**.
 
 ---
 
@@ -92,36 +96,43 @@ curl -fsSL https://pixi.sh/install.sh | bash
 pixi install
 pixi run install        # pip install -e .
 
-# 2. Download the demonstrations (rgb datasets — the Kaggle competition data)
+# 2. Download the demonstrations (state datasets — the Kaggle competition data)
 pixi run python il/download_demos.py
 
-# 3. Train the RGB Diffusion Policy on the easy demos
-pixi run python il/train.py method=dp_rgb demo_dir=easy
+# 3. Train the state Diffusion Policy on the easy demos
+pixi run python il/train.py method=dp demo_dir=easy
 
 # 4. Evaluate
 pixi run python eval.py difficulty=easy \
-    policy=warehouse_sort.il_policy:load_dp_rgb \
-    checkpoint=il/baselines/diffusion_policy/runs/warehouse_rgb_dp/checkpoints/best_eval_sort_accuracy.pt \
+    policy=warehouse_sort.il_policy:load_dp \
+    checkpoint=il/baselines/diffusion_policy/runs/warehouse_state_dp_easy/checkpoints/best_eval_sort_accuracy.pt \
     eval_config=conf/eval/default.yaml
 ```
 
-**Demonstrations are provided** for every level — **200 rgb episodes per level**, as the
+**Demonstrations are provided** for every level — **200 episodes per level**, as the
 [Kaggle competition data](https://www.kaggle.com/competitions/marso-hack-berlin-2026-robot-parcel-sorting-challenge/data).
 On Kaggle the data is mounted automatically; elsewhere fetch it with
 `pixi run python il/download_demos.py` (join the competition + set a Kaggle API token first).
 Either way it stages into `il/demos/<level>/`. Generating your own is optional (see
 [il/README.md](il/README.md)).
 
-### 📊 What to expect & training time
+### 📊 Training time
 
-The provided RGB Diffusion Policy is a **runnable template, not a solution** — out of the box it
-**does not solve the task** (sort accuracy near 0). Getting an image policy to actually sort is
-the challenge. Training time at default settings (`total_iters=30000`) is roughly **~30–90 min**
-on a single modern GPU (e.g. Colab T4), scaling with iterations and image-encoder size.
+The provided state Diffusion Policy is a **starting point, not a finished solution** — train it,
+evaluate, and improve it (see **[Improving the baseline](#-improving-the-baseline)**). Rough
+training time at default settings on a single modern GPU (e.g. Colab T4):
 
-One nice property: the rgb observation has a **fixed shape at every difficulty**, so a single
-trained checkpoint can be evaluated on easy, medium, and hard (no per-level retraining required —
-though training per level can still help).
+| level | default train iters | approx. training time |
+|-------|:---:|:---:|
+| easy   | 30k | ~20–40 min |
+| medium | 50k | ~40–70 min |
+| hard   | 60k | ~50–90 min |
+
+(Times scale with hardware and iteration count.)
+
+> ⚠️ **One model per level (state track).** The state vector's size depends on the parcel count,
+> so a checkpoint is **specific to its difficulty level** — train (and submit) a separate
+> checkpoint for easy, medium, and hard.
 
 For a guided walkthrough, open **[starter.ipynb](starter.ipynb)** — or click the badge at the top of this page to launch it directly in Google Colab (select a GPU runtime).
 
@@ -133,7 +144,7 @@ You hand us three things (full details in **[SUBMISSION.md](SUBMISSION.md)**):
 2. **`submission.yaml`** — declares, per level, the checkpoint path.
 3. **Your checkpoint(s) + a policy entrypoint** — a `module:function` that loads a checkpoint
    into a policy exposing `act(obs, deterministic=True)` (the provided
-   `warehouse_sort.il_policy:load_dp_rgb` already does this).
+   `warehouse_sort.il_policy:load_dp` already does this). One checkpoint per level (state track).
 
 **To submit:** [**fork**](https://github.com/marso-robotics/berlin-marso-hackathon/fork) this
 repo, do all your work in your fork, and send us your fork's GitHub URL — you never push to this
@@ -143,26 +154,25 @@ repo. Read **[SUBMISSION.md](SUBMISSION.md)** for exactly how to package and sub
 
 ## 💡 Improving the baseline
 
-Concrete things to try with the RGB Diffusion Policy (all via `il/train.py` flags or the loader):
+Concrete things to try with the state Diffusion Policy (all via `il/train.py` flags or the loader):
 
 - **Train longer / on more data** — raise `flags.total_iters`; record extra demos with
-  `il/gen_demos.py`. Image policies are data-hungry, so this matters a lot here.
-- **Visual encoder** — `flags.visual_encoder` (e.g. `resnet18`), `flags.num_kp` (SpatialSoftmax
-  keypoints). The perception front-end is the likely bottleneck for an image policy.
+  `il/gen_demos.py`.
 - **Horizons** — `flags.pred_horizon` (how many actions are predicted), `flags.act_horizon`
-  (how many are executed per inference), `flags.obs_horizon` (image history length).
-- **Denoising steps at eval** — `num_inference_steps` in `load_dp_rgb` (more steps → better
-  actions, slower inference). Eval-only, so safe to raise.
+  (how many are executed per inference), `flags.obs_horizon` (state history length). A longer
+  `pred_horizon` often helps on the harder, longer-horizon levels.
+- **Denoising steps at eval** — `num_inference_steps` in `load_dp` (more steps → better actions,
+  slower inference). Eval-only, so safe to raise.
 - **Network capacity** — `unet_dims`, `diffusion_step_embed_dim`.
 - **Optimisation** — `flags.batch_size`, learning rate.
 - **Generalisation** — the held-out configs use wider positions / more bin-swaps than training.
-  Train across that variation (more demos, the hard config) rather than overfitting the exact
-  training seeds — hard is weighted 0.5, so this is where the points are.
+  Train across that variation rather than overfitting the exact training seeds — hard is
+  weighted 0.5, so this is where the points are.
 
 > ⚠️ If you change an **architecture/horizon** hyperparameter for training (`obs_horizon`,
-> `act_horizon`, `pred_horizon`, `unet_dims`, `diffusion_step_embed_dim`, `n_groups`,
-> `visual_encoder`, `num_kp`), pass the **same value** to your policy loader (`load_dp_rgb(...)`
-> args, or your own `load_fn`) — or the checkpoint won't load. See
+> `pred_horizon`, `unet_dims`, `diffusion_step_embed_dim`, `n_groups`, `num_diffusion_iters`),
+> pass the **same value** to your policy loader (`load_dp(...)` args, or your own `load_fn`) — or
+> the checkpoint won't load. See
 > [warehouse_sort/il_policy.py](warehouse_sort/il_policy.py).
 
 For other algorithm ideas (other IL methods, RL), see
@@ -172,15 +182,30 @@ For other algorithm ideas (other IL methods, RL), see
 
 ## 👀 Observation
 
-A fixed third-person **scene camera** plus robot proprioception — **no privileged parcel or bin
-state**. With the `FlattenRGBDObservationWrapper` (applied for you), `obs` is a dict:
+### State (main track)
+A flat `float32` vector, shape `(num_envs, 54)` for easy (2 parcels):
 
-- `obs["rgb"]`: `(N, 128, 128, 3)` uint8 — the scene image, RGB channel order
-- `obs["state"]`: `(N, 26)` float32 — **proprioception only** (joint positions/velocities, TCP
-  pose, gripper); contains **no** parcel positions, tag colors, or bin locations
+| slice | field | dims |
+|-------|-------|------|
+| `[0:9]` | joint positions (`qpos`) | 9 |
+| `[9:18]` | joint velocities (`qvel`) | 9 |
+| `[18:25]` | TCP pose (xyz + quat wxyz) | 7 |
+| `[25:26]` | is_grasped | 1 |
+| `[26:...]` | parcel poses (xyz + quat per parcel) | P×7 |
+| `…` | parcel tag colors (one-hot [red, blue]) | P×2 |
+| `…` | bin positions (xyz of red bin, blue bin) | 2×3 |
+| `…` | bin color one-hot | 2×2 |
 
-Your policy must read the colors and geometry from the image. The observation has the **same
-shape at every difficulty**, so one trained policy can run on easy, medium, and hard.
+Total dim = `26 + P×7 + P×2 + 6 + 4` (= 54 for P=2). **Because the size depends on the parcel
+count `P`, a state policy is level-specific — train one checkpoint per difficulty.**
+
+### RGB (optional image track)
+A fixed third-person scene camera. With `FlattenRGBDObservationWrapper`:
+- `obs["rgb"]`: `(N, 128, 128, 3)` uint8 — scene image, RGB channel order
+- `obs["state"]`: `(N, 26)` float32 — proprioception only (no parcel/bin info)
+
+The rgb observation has the same shape at every difficulty (one policy can run on all levels),
+but image IL is not yet solving the task — it's the harder, optional track.
 
 ---
 
@@ -218,7 +243,7 @@ For exactly how to package and submit your entry, see **[SUBMISSION.md](SUBMISSI
 
 - **ManiSkill 3** — GPU-accelerated robot simulation: [docs](https://maniskill.readthedocs.io/en/latest/) / [arxiv.org/abs/2410.00425](https://arxiv.org/abs/2410.00425)
 - **Diffusion Policy** — Chi et al. 2023: [diffusion-policy.cs.columbia.edu](https://diffusion-policy.cs.columbia.edu)
-- The RGB template is built on the ManiSkill IL baselines and **[LeRobot](https://github.com/huggingface/lerobot)** conventions.
+- The state + RGB Diffusion Policy baselines are built on the ManiSkill IL baselines and **[LeRobot](https://github.com/huggingface/lerobot)** conventions.
 
 ### Where to find more approaches
 
@@ -238,7 +263,7 @@ for inspiration on how to solve these environments.
 ```
 warehouse_sort/     # the ManiSkill environment + IL policy entrypoint
   env.py            # WarehouseSort-v1 (register, scene, obs, reward, evaluate)
-  il_policy.py      # load_dp_rgb — wire into eval.py via policy=...
+  il_policy.py      # load_dp (state) / load_dp_rgb (image) — wire into eval.py via policy=...
   utils.py          # env construction, rollout, metrics printing
 
 conf/               # Hydra configs

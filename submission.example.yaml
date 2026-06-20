@@ -6,31 +6,35 @@
 #   * which difficulty levels you want scored,
 #   * the checkpoint to use for each.
 #
-# The judge reads this manifest, runs the held-out eval for every level you declare,
-# and computes the weighted sort-accuracy score. Anything you do NOT declare scores 0
-# for that level — but its weight still counts (easy 0.2, medium 0.3, hard 0.5).
+# The judge runs the held-out eval for every level you declare and computes the weighted
+# sort-accuracy score. A level you do NOT declare scores 0 (its weight still counts:
+# easy 0.2, medium 0.3, hard 0.5).
 #
-# This is an IMAGE challenge (observation is always rgb). Because the rgb observation has
-# the same shape at every difficulty, ONE checkpoint can serve all three levels (shown
-# below) — or train per level and point each at its own file.
+# MAIN TRACK = state. The state vector is parcel-count-specific, so train and submit ONE
+# checkpoint PER level (easy/medium/hard each have their own). For the optional image track,
+# set `obs_mode: rgb` and use the rgb policy entrypoint.
 # ─────────────────────────────────────────────────────────────────────────────
 
 team: "team-name"
 
 # Policy entrypoint  "module:function"  (see warehouse_sort/il_policy.py and
 # examples/random_policy.py for the contract). Used for every level unless overridden.
-policy: warehouse_sort.il_policy:load_dp_rgb
+policy: warehouse_sort.il_policy:load_dp
+
+# Observation mode for the whole submission: state (main track) or rgb (optional image track).
+# Optional — defaults to state.
+obs_mode: state
 
 levels:
 
   easy:
-    checkpoint: il/baselines/diffusion_policy/runs/warehouse_rgb_dp/checkpoints/best_eval_sort_accuracy.pt
+    checkpoint: il/baselines/diffusion_policy/runs/warehouse_state_dp_easy/checkpoints/best_eval_sort_accuracy.pt
 
   medium:
-    checkpoint: il/baselines/diffusion_policy/runs/warehouse_rgb_dp/checkpoints/best_eval_sort_accuracy.pt
+    checkpoint: il/baselines/diffusion_policy/runs/warehouse_state_dp_medium/checkpoints/best_eval_sort_accuracy.pt
 
   hard:
-    checkpoint: il/baselines/diffusion_policy/runs/warehouse_rgb_dp/checkpoints/best_eval_sort_accuracy.pt
+    checkpoint: il/baselines/diffusion_policy/runs/warehouse_state_dp_hard/checkpoints/best_eval_sort_accuracy.pt
 
-    # You can override the entrypoint per level too, e.g. a different policy on hard:
+    # You can override the entrypoint per level too, e.g. a different approach on hard:
     # policy: my_module:load_policy
