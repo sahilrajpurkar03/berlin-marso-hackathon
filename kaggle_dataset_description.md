@@ -1,8 +1,8 @@
 # WarehouseSort — Demonstration Datasets
 
-Expert demonstrations for the **WarehouseSort** image-based pick-and-place challenge: a Franka
-Panda robot sorts parcels into the bin matching the **colored tag on each parcel's top face**
-(red tag → red bin, blue tag → blue bin), seen only through a fixed scene camera.
+Expert demonstrations for the **WarehouseSort** pick-and-place challenge: a Franka Panda robot
+sorts parcels into the bin matching the **colored tag on each parcel's top face** (red tag → red
+bin, blue tag → blue bin).
 
 ## What's included
 
@@ -14,31 +14,34 @@ Panda robot sorts parcels into the bin matching the **colored tag on each parcel
 | `medium/` | medium | 4 | small position jitter |
 | `hard/`   | hard   | 6 | small position + slight orientation jitter; bins may swap sides |
 
-Each folder contains one **ManiSkill trajectory dataset** (a pair — both files are required):
+Each folder contains ManiSkill trajectory datasets (each is a **pair** — `.h5` + `.json`, both
+required):
 
-- `trajectory.rgb.pd_ee_delta_pos.physx_cuda.h5` — per-step **observations + actions**
-- `trajectory.rgb.pd_ee_delta_pos.physx_cuda.json` — episode metadata (control mode, etc.)
+- `trajectory.state.pd_ee_delta_pos.physx_cuda.{h5,json}` — **state** track (main)
+- `trajectory.rgb.pd_ee_delta_pos.physx_cuda.{h5,json}` — **rgb** track (optional image track)
 
-**Observation** (per step): a fixed third-person scene-camera image `rgb` `(128, 128, 3)` uint8
-plus robot **proprioception** `state` `(26,)` (joint/TCP state) — **no** privileged parcel or bin
-coordinates. **Action**: `pd_ee_delta_pos`, 4 dims in `[-1, 1]` (end-effector Δxyz + gripper).
+**Observations.** *State* (main track): a low-dim vector with robot proprioception + parcel poses
+& tag colors + bin positions & colors (its length grows with the parcel count, so it is
+level-specific). *RGB* (optional): a fixed third-person scene-camera image `(128, 128, 3)` uint8 +
+proprioception `(26,)`. **Action** (both): `pd_ee_delta_pos`, 4 dims in `[-1, 1]` (end-effector
+Δxyz + gripper).
 
 ## How they were generated (ManiSkill 3)
 
 A deterministic **scripted waypoint policy** solves the task in the GPU-accelerated
 [ManiSkill 3](https://maniskill.readthedocs.io/en/latest/) simulator. We **record** each rollout
-with ManiSkill's `RecordEpisode`, then **replay** it (`replay_trajectory`) to re-render the
-scene-camera RGB observations — the standard ManiSkill *record → replay* pipeline. Trajectories
-are clean (no action noise) and each episode ends the moment all parcels are correctly sorted.
+with ManiSkill's `RecordEpisode`, then **replay** it (`replay_trajectory`) to render the
+observations in each mode — the standard ManiSkill *record → replay* pipeline. Trajectories are
+clean (no action noise) and each episode ends the moment all parcels are correctly sorted.
 
 > The scripted policy reads privileged simulator state to drive the arm — it is the **data
-> generator only**. Submitted policies must act from the observation (image + proprioception).
+> generator only**. Submitted policies must act from the observation.
 
 ## How to use them (imitation learning)
 
-Train an **image policy** (e.g. a Diffusion Policy) by behavior cloning: predict the action
-sequence from the recent `rgb` + `state` observations. The provided baseline loads these `.h5`
-files directly and trains an RGB Diffusion Policy. Because the observation has the **same shape
-at every difficulty**, a single trained policy can be evaluated on easy, medium, and hard.
+Train a policy by behavior cloning: predict the action sequence from the recent observations. The
+provided baseline loads these `.h5` files directly and trains a Diffusion Policy. The **main track
+is state-based** (one checkpoint per level, since the state vector is level-specific); an optional
+**rgb** image track is also provided.
 
 See the challenge repository for the full training + evaluation pipeline.

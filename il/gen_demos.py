@@ -5,7 +5,7 @@ This is the IL track's data step. It rolls out the **scripted waypoint policy**
 format (``.h5`` + ``.json``) via the official ``RecordEpisode`` wrapper.
 
 After recording the raw demos this script invokes ManiSkill's ``replay_trajectory`` tool to
-produce the training-ready **rgb** dataset the RGB Diffusion Policy trains on (scene-cam images).
+produce the training-ready dataset(s): ``state`` (main track) and/or ``rgb`` (image track).
 
 It also saves a demo **video (.mp4) and .gif** for the README / notebook.
 
@@ -170,9 +170,9 @@ def main():
     ap.add_argument("--out-dir", default=None)
     ap.add_argument("--no-replay", action="store_true",
                     help="only record raw demos; skip the replay_trajectory obs conversion")
-    ap.add_argument("--obs-modes", nargs="*", default=["rgb"],
+    ap.add_argument("--obs-modes", nargs="*", default=["state"],
                     help="which obs representations to produce via replay_trajectory "
-                         "(image challenge -> rgb; pass 'state' too only if you need it)")
+                         "(main track -> state; add 'rgb' for the optional image track)")
     ap.add_argument("--obs-camera", default="scene", choices=["scene"],
                     help="image obs camera (scene = fixed third-person; the only supported camera)")
     ap.add_argument("--no-media", action="store_true",
