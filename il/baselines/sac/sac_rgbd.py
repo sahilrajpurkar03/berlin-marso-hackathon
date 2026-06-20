@@ -732,6 +732,20 @@ if __name__ == "__main__":
                 eval_metrics_mean[k] = mean
                 if logger is not None:
                     logger.add_scalar(f"eval/{k}", mean, global_step)
+            # WarehouseSort's custom evaluate() keys (sort_accuracy, mis_sort_count, ...) aren't
+            # standard success/fail keys, so ManiSkillVectorEnv's auto "episode" metric tracking
+            # doesn't forward them -- call evaluate() directly (same approach eval.py's own
+            # rollout_metrics uses) to get them. Safe to call here: with ignore_terminations=True
+            # and num_eval_steps==max_episode_steps, the loop above just completed exactly one
+            # full episode per env, so this reflects that episode's final cumulative state.
+            if hasattr(eval_envs.unwrapped, "evaluate"):
+                ev = eval_envs.unwrapped.evaluate()
+                for k in ("sort_accuracy", "success_count", "mis_sort_count"):
+                    if k in ev:
+                        mean = ev[k].float().mean()
+                        eval_metrics_mean[k] = mean
+                        if logger is not None:
+                            logger.add_scalar(f"eval/{k}", mean, global_step)
             desc = f"global_step={global_step}"
             if "sort_accuracy" in eval_metrics_mean:
                 desc += f", sort_accuracy: {eval_metrics_mean['sort_accuracy']:.2f}"
