@@ -36,6 +36,10 @@ class _ACTPolicy:
         self._chunk = None
         self._step = 0
 
+    def reset(self):
+        self._chunk = None
+        self._step = 0
+
     def _prep_obs(self, obs):
         state = obs["state"].float().to(self.device)
         rgb = obs["rgb"].to(self.device)  # (N, H, W, 3) uint8
