@@ -17,7 +17,7 @@ flags:
   utd: 0.5
   batch_size: 512
   learning_starts: 4000
-  eval_freq: 25
+  eval_freq: 10000
   log_freq: 1000
   capture_video: true
   num_seed_demos: 200
