@@ -1,0 +1,25 @@
+# @package _global_
+# State Diffusion Policy (MAIN track): privileged low-dim state obs. The end-to-end baseline
+# wired into eval.py. State input is parcel-count-specific -> train one checkpoint PER level.
+# Use dp_medium.yaml / dp_hard.yaml for those levels (bigger horizons, more iters).
+baseline_dir: diffusion_policy
+script: train.py
+demo_kind: state
+flags:
+  total_iters: 50000
+  batch_size: 512        # small dataset (23k transitions, 200 identical demos) — keep small
+  lr: 3e-4             # conservative: 3e-4 caused loss collapse + overfitting past 10k
+  obs_horizon: 2
+  act_horizon: 8         # re-query every 4 steps for better precision on second parcel
+  pred_horizon: 16
+  num_diffusion_iters: 100
+  lr_schedule: plateau   # reduces LR only when sort_accuracy stops improving
+  lr_patience: 3         # wait 3 eval rounds (7500 iters at eval_freq=2500) before reducing
+  lr_factor: 0.5         # halve the LR on plateau
+  num_eval_envs: 8
+  num_eval_episodes: 16
+  eval_freq: 5000
+  log_freq: 1000
+  save_freq: 10000
+  capture_video: true
+  exp_name: warehouse_state_dp_easy

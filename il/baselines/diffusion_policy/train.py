@@ -65,6 +65,10 @@ class Args:
     obs_horizon: int = 2 # Seems not very important in ManiSkill, 1, 2, 4 work well
     act_horizon: int = 8 # Seems not very important in ManiSkill, 4, 8, 15 work well
     pred_horizon: int = 16 # 16->8 leads to worse performance, maybe it is like generate a half image; 16->32, improvement is very marginal
+    num_diffusion_iters: int = 100 # DDPM training timesteps; 100 is standard, higher rarely helps
+    lr_schedule: str = 'cosine' # 'cosine' (default) or 'plateau' (ReduceLROnPlateau on sort_accuracy)
+    lr_patience: int = 3        # plateau only: evals with no improvement before LR reduction
+    lr_factor: float = 0.5      # plateau only: multiplicative factor on LR reduction
     diffusion_step_embed_dim: int = 64 # not very important
     unet_dims: List[int] = field(default_factory=lambda: [64, 128, 256]) # default setting is about ~4.5M params
     n_groups: int = 8 # jigu says it is better to let each group have at least 8 channels; it seems 4 and 8 are simila
@@ -185,7 +189,7 @@ class Agent(nn.Module):
             down_dims=args.unet_dims,
             n_groups=args.n_groups,
         )
-        self.num_diffusion_iters = 100
+        self.num_diffusion_iters = args.num_diffusion_iters
         self.noise_scheduler = DDPMScheduler(
             num_train_timesteps=self.num_diffusion_iters,
             beta_schedule='squaredcos_cap_v2', # has big impact on performance, try not to change
@@ -347,13 +351,19 @@ if __name__ == "__main__":
     optimizer = optim.AdamW(params=agent.parameters(),
         lr=args.lr, betas=(0.95, 0.999), weight_decay=1e-6)
 
-    # Cosine LR schedule with linear warmup
-    lr_scheduler = get_scheduler(
-        name='cosine',
-        optimizer=optimizer,
-        num_warmup_steps=500,
-        num_training_steps=args.total_iters,
-    )
+    # LR schedule: cosine (default) or plateau (reduces on eval stagnation)
+    if args.lr_schedule == 'plateau':
+        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode='max', factor=args.lr_factor,
+            patience=args.lr_patience, min_lr=1e-6,
+        )
+    else:
+        lr_scheduler = get_scheduler(
+            name='cosine',
+            optimizer=optimizer,
+            num_warmup_steps=500,
+            num_training_steps=args.total_iters,
+        )
 
     # Exponential Moving Average
     # accelerates training and improves stability
@@ -388,6 +398,8 @@ if __name__ == "__main__":
                     print(
                         f"New best {k}_rate: {eval_metrics[k]:.4f}. Saving checkpoint."
                     )
+            if args.lr_schedule == 'plateau':
+                lr_scheduler.step(eval_metrics.get("sort_accuracy", 0.0))
     def log_metrics(iteration):
         if iteration % args.log_freq == 0:
             writer.add_scalar(
@@ -419,7 +431,8 @@ if __name__ == "__main__":
         optimizer.zero_grad()
         total_loss.backward()
         optimizer.step()
-        lr_scheduler.step()  # step lr scheduler every batch, this is different from standard pytorch behavior
+        if args.lr_schedule != 'plateau':
+            lr_scheduler.step()  # step lr scheduler every batch, this is different from standard pytorch behavior
         timings["backward"] += time.time() - last_tick
 
         # ema step
