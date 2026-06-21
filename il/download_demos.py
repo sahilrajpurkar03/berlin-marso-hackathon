@@ -29,7 +29,7 @@ DEFAULT_COMPETITION = "marso-hack-berlin-2026-robot-parcel-sorting-challenge"
 def _find_or_download(competition):
     """Return a directory containing the rgb demos — a mounted Kaggle input or a download."""
     for p in glob.glob("/kaggle/input/*"):
-        if (glob.glob(os.path.join(p, "**/trajectory.rgb.*.h5"), recursive=True)
+        if (glob.glob(os.path.join(p, "**/trajectory.*.pd_ee_delta_pos.physx_cuda.h5"), recursive=True)
                 or glob.glob(os.path.join(p, "**/*.tar.gz"), recursive=True)):
             print("found attached Kaggle competition data:", p)
             return p
@@ -55,13 +55,13 @@ def main():
             with tarfile.open(t) as tf:
                 tf.extractall(args.dest)
     else:
-        for h5 in glob.glob(os.path.join(src, "**/trajectory.rgb.*.h5"), recursive=True):
+        for h5 in glob.glob(os.path.join(src, "**/trajectory.*.pd_ee_delta_pos.physx_cuda.h5"), recursive=True):
             lvl = os.path.basename(os.path.dirname(h5))
             os.makedirs(os.path.join(args.dest, lvl), exist_ok=True)
             for f in glob.glob(h5[:-2] + "*"):   # the .h5 and its .json
                 shutil.copy(f, os.path.join(args.dest, lvl, os.path.basename(f)))
 
-    got = sorted(glob.glob(os.path.join(args.dest, "*", "trajectory.rgb.*.h5")))
+    got = sorted(glob.glob(os.path.join(args.dest, "*", "trajectory.*.pd_ee_delta_pos.physx_cuda.h5")))
     print(f"staged {len(got)} level dataset(s) under {args.dest}:")
     for f in got:
         print(" ", f)

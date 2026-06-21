@@ -77,6 +77,8 @@ def rollout_metrics(env, agent, device, n_episodes, seeds, max_steps, determinis
         if take < nb:
             batch_seeds = batch_seeds + all_seeds[: nb - take]
         obs, _ = env.reset(seed=batch_seeds)
+        if hasattr(agent, "reset"):
+            agent.reset()
         obs = to_device(obs, device)
         for _ in range(max_steps - 1):
             obs, _, _, _, _ = env.step(agent.act(obs, deterministic=deterministic))
@@ -149,6 +151,8 @@ def record_eval_video(cfg, obs_mode, randomization, agent, device, out_dir,
         video_fps=20, max_steps_per_video=cfg.max_episode_steps,
     )
     obs, _ = env.reset(seed=seed)
+    if hasattr(agent, "reset"):
+        agent.reset()
     steps = max_steps or cfg.max_episode_steps
     for _ in range(steps):
         obs, _, _, _, _ = env.step(agent.act(to_device(obs, device), deterministic=True))

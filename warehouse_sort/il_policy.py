@@ -23,45 +23,75 @@ def _add_baseline_path(rel):
 
 
 # --------------------------------------------------------------------------- #
-# State Diffusion Policy (MAIN track) — privileged low-dim state obs. Deployed fully
-# closed-loop: re-query every step, execute the first predicted action. The state vector
-# is parcel-count-specific, so a checkpoint is trained PER difficulty level.
+# State Diffusion Policy (MAIN track) — privileged low-dim state obs. The state vector is
+# parcel-count-specific, so a checkpoint is trained PER difficulty level.
+#
+# Deployed with ACTION CHUNKING (commit to act_horizon steps before re-planning) rather than
+# re-querying every step: DDPM sampling starts from fresh random noise every call, so two
+# consecutive single-step plans are independent samples that can disagree -- especially on the
+# gripper dimension. A grasp needs "close" held for ~10+ consecutive steps; if every step is a
+# new sample the gripper command flickers and the box is never actually grasped (org. team note,
+# diagnosed from "picks first box, drives to next bin empty-handed" reports across teams). The
+# in-training evaluator already executes act_horizon actions per re-plan; this matches it.
 # --------------------------------------------------------------------------- #
 class _DPPolicy:
     def __init__(self, net, scheduler, obs_horizon, pred_horizon, act_dim, device,
-                 num_inference_steps=16):
+                 num_inference_steps=16, act_horizon=8):
         self.net = net.to(device).eval()
         self.scheduler = scheduler
         self.scheduler.set_timesteps(num_inference_steps)
         self.obs_horizon = obs_horizon
         self.pred_horizon = pred_horizon
+        self.act_horizon = act_horizon
         self.act_dim = act_dim
         self.device = device
         self.prev = None
+        self._plan = None     # buffered chunk (B, act_horizon, act_dim)
+        self._i = 0
+
+    def reset(self):
+        self.prev = None
+        self._plan = None
+        self._i = 0
 
     @torch.no_grad()
     def act(self, obs, deterministic=True):
         cur = (obs["state"] if isinstance(obs, dict) else obs).float().to(self.device)
         if self.prev is None or self.prev.shape != cur.shape:
             self.prev = cur
+            self._plan = None  # reset chunk on a fresh episode
         hist = [self.prev, cur][-self.obs_horizon:]
         while len(hist) < self.obs_horizon:
             hist = [hist[0]] + hist
         self.prev = cur
-        obs_cond = torch.stack(hist, dim=1).flatten(start_dim=1)
-        B = cur.shape[0]
-        naction = torch.randn((B, self.pred_horizon, self.act_dim), device=self.device)
-        for k in self.scheduler.timesteps:
-            noise_pred = self.net(sample=naction, timestep=k, global_cond=obs_cond)
-            naction = self.scheduler.step(model_output=noise_pred, timestep=k, sample=naction).prev_sample
-        return naction[:, self.obs_horizon - 1].clamp(-1.0, 1.0)
+        # only re-plan when the buffered chunk is used up
+        if self._plan is None or self._i >= self.act_horizon:
+            obs_cond = torch.stack(hist, dim=1).flatten(start_dim=1)
+            B = cur.shape[0]
+            naction = torch.randn((B, self.pred_horizon, self.act_dim), device=self.device)
+            for k in self.scheduler.timesteps:
+                noise_pred = self.net(sample=naction, timestep=k, global_cond=obs_cond)
+                naction = self.scheduler.step(model_output=noise_pred, timestep=k,
+                                              sample=naction).prev_sample
+            start = self.obs_horizon - 1
+            self._plan = naction[:, start:start + self.act_horizon].clamp(-1.0, 1.0)
+            self._i = 0
+        a = self._plan[:, self._i]
+        self._i += 1
+        return a
 
 
 def load_dp(checkpoint, sample_obs, action_space, device,
             obs_horizon=2, pred_horizon=16, diffusion_step_embed_dim=64,
             unet_dims=(64, 128, 256), n_groups=8, num_diffusion_iters=100,
-            num_inference_steps=50):
-    """Load a state Diffusion Policy checkpoint (uses EMA weights)."""
+            num_inference_steps=50,           # more denoising = steadier actions (was 16)
+            act_horizon=8):                   # how many steps to commit per re-plan
+    """Load a state Diffusion Policy checkpoint (uses EMA weights).
+
+    If you changed any architecture/horizon hyperparameter for training (obs_horizon,
+    act_horizon, pred_horizon, unet_dims, diffusion_step_embed_dim, n_groups,
+    num_diffusion_iters), pass the same value here or the checkpoint won't load.
+    """
     _add_baseline_path("diffusion_policy")
     from diffusion_policy.conditional_unet1d import ConditionalUnet1D
     from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
@@ -83,7 +113,7 @@ def load_dp(checkpoint, sample_obs, action_space, device,
                               beta_schedule="squaredcos_cap_v2", clip_sample=True,
                               prediction_type="epsilon")
     return _DPPolicy(net, scheduler, obs_horizon, pred_horizon, act_dim, device,
-                     num_inference_steps=num_inference_steps)
+                     num_inference_steps=num_inference_steps, act_horizon=act_horizon)
 
 
 # --------------------------------------------------------------------------- #

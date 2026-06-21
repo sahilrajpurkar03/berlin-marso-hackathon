@@ -17,9 +17,10 @@ class RandomPolicy:
         self.device = device
 
     def act(self, obs, deterministic=True):
-        # obs is the rgb observation: a dict {"rgb": (N,128,128,3), "state": (N,26)}.
-        # We only need its batch size; we never read privileged fields or the env.
-        n = obs["rgb"].shape[0]
+        # obs is the state vector (N, obs_dim) for the main track, or a dict
+        # {"rgb": (N,128,128,3), "state": (N,26)} for the image track. We only need its
+        # batch size; we never read privileged fields or the env.
+        n = (obs["rgb"] if isinstance(obs, dict) else obs).shape[0]
         return torch.rand((n, self.action_dim), device=self.device) * 2 - 1
 
 
