@@ -9,10 +9,10 @@ Wire it in via the config `policy` field:
         checkpoint=<path> eval_config=conf/eval/default.yaml
 
 Note: uses simple chunk-replay (predict num_queries actions, play them back open-loop, then
-re-predict) rather than ACT's optional temporal-ensembling eval mode -- the latter needs an
-explicit per-episode reset signal that eval.py's rollout loop doesn't provide, so chunk-replay
-is the lower-risk choice here (same simplification precedent as the DP policy's obs-history
-wrapper, which also doesn't get an explicit reset signal between eval episodes).
+re-predict) rather than ACT's optional temporal-ensembling eval mode, which needs more state
+than chunk-replay to track correctly. _ACTPolicy exposes a reset() method that
+rollout_metrics/record_eval_video call before each new episode (see warehouse_sort/utils.py),
+so the buffered chunk doesn't carry stale actions across episode boundaries.
 """
 
 import torch
@@ -33,6 +33,13 @@ class _ACTPolicy:
         self.act_horizon = act_horizon  # how many predicted actions to replay before re-querying
         self.device = device
         self.resize = T.Resize((224, 224), antialias=True)
+        self._chunk = None
+        self._step = 0
+
+    def reset(self):
+        """Called by rollout_metrics/record_eval_video before each new episode -- without this
+        the buffered chunk carries over across episode boundaries, so the first few steps of a
+        fresh episode would replay actions planned for the PREVIOUS episode's observation."""
         self._chunk = None
         self._step = 0
 
