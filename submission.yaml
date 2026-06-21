@@ -1,0 +1,17 @@
+# SUBMISSION MANIFEST — SAC (state, off-policy RL with demo-seeded replay buffer)
+#
+# Checkpoints are too large to commit to GitHub, so they're hosted as a public Kaggle Dataset:
+# https://www.kaggle.com/datasets/sahilrajpurkar/marco-checkpoint
+# Run `pixi run python download_checkpoint.py` once before eval.py to stage them locally
+# under checkpoints/ (the paths below).
+#
+# Only `easy` is trained for this method -- medium/hard are not done (they score 0, but their
+# weight still counts toward the final weighted score: easy 0.2, medium 0.3, hard 0.5).
+
+team: "glasses on"
+
+policy: warehouse_sort.rl_policy:load_sac_state
+
+levels:
+  easy:
+    checkpoint: checkpoints/final_ckpt_SAC_EASY.pt
