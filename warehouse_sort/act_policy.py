@@ -62,20 +62,31 @@ def load_act(checkpoint, sample_obs, action_space, device,
              masks=False, dilation=False, lr_backbone=1e-5, kl_weight=10):
     """Load an ACT checkpoint trained by il/baselines/act/train_rgbd.py (uses EMA weights).
 
-    If you changed any architecture flag for training (backbone, num_queries, hidden_dim,
-    enc_layers, dec_layers, dim_feedforward, nheads), pass the same value here or the
-    checkpoint won't load.
+    If you changed any architecture flag for training (backbone, hidden_dim, enc_layers,
+    dec_layers, dim_feedforward, nheads), pass the same value here or the checkpoint won't
+    load. ``num_queries`` is the exception -- eval.py/the judge call this function with no
+    extra kwargs, but different training runs use different chunk sizes (e.g. a 60-step chunk
+    for a longer max_episode_steps), so it's inferred directly from the checkpoint's
+    ``query_embed.weight`` shape below rather than trusted from the default/CLI value.
 
-    act_horizon defaults to 10 (not num_queries=30): eval.py/the judge call this with no
-    kwargs, and grading uses plain chunk-replay (no temporal_agg), so replaying the full
-    30-step chunk open-loop is the least reactive option. Re-querying every ~10 steps trades
-    a bit of compute for much better recovery from jitter/bin-swap (same reasoning as DP's
-    act_horizon).
+    act_horizon defaults to 10, not num_queries: grading uses plain chunk-replay (no
+    temporal_agg), so replaying the full chunk open-loop before re-observing is the least
+    reactive option. Re-querying every ~10 steps trades a bit of compute for much better
+    recovery from jitter/bin-swap (same reasoning as DP's act_horizon).
     """
     import types
-    import numpy as np
     _add_baseline_path("act")
     from train_rgbd import Agent
+
+    ckpt = torch.load(checkpoint, map_location=device, weights_only=False)
+    state_dict = ckpt.get("ema_agent", ckpt.get("agent"))
+    ckpt_num_queries = state_dict["model.query_embed.weight"].shape[0]
+    if ckpt_num_queries != num_queries:
+        print(f"[act_policy] checkpoint was trained with num_queries={ckpt_num_queries} "
+              f"(default is {num_queries}) -- using {ckpt_num_queries} to match the checkpoint",
+              flush=True)
+        num_queries = ckpt_num_queries
+    act_horizon = min(act_horizon or num_queries, num_queries)
 
     state_dim = sample_obs["state"].shape[1]
     args = types.SimpleNamespace(
@@ -94,6 +105,5 @@ def load_act(checkpoint, sample_obs, action_space, device,
     )
 
     agent = Agent(stub, args)
-    ckpt = torch.load(checkpoint, map_location=device, weights_only=False)
-    agent.load_state_dict(ckpt.get("ema_agent", ckpt.get("agent")))
-    return _ACTPolicy(agent, num_queries, act_horizon or num_queries, device)
+    agent.load_state_dict(state_dict)
+    return _ACTPolicy(agent, num_queries, act_horizon, device)
