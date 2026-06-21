@@ -15,10 +15,14 @@ __pycache__/
 .vscode/
 .claude/
 
-# IL track generated artifacts (checkpoints already covered by *.pt)
+# IL track generated artifacts
 il/videos/
 *.h5
 *.mp4
+*.pt
+# checkpoints/ is populated by download_checkpoint.py from the Kaggle-hosted dataset (too
+# large for GitHub) -- not committed, judges/anyone re-run the download script instead.
+checkpoints/
 # Demo datasets (rgb) are large and exceed GitHub's file-size limit, so they are NOT in git —
 # they're hosted as a Release asset and fetched with il/download_demos.py (see README). Only the
 # small demo media (gif/mp4) ships in the repo.

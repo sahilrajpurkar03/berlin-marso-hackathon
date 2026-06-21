@@ -22,9 +22,15 @@ Your repo must contain:
 3. **`submission.yaml`** at the repo root — the manifest declaring your entrypoint,
    the levels you want scored and the checkpoint for each (see §4).
 
-Make sure a fresh clone installs cleanly (`pixi install && pixi run install`) and
-that your entrypoint imports without your training code present — evaluation only
-ever calls your `load_fn` and `.act(obs)`.
+> ⚠️ **This submission's checkpoints exceed GitHub's size limits**, so they're hosted as a
+> public Kaggle Dataset instead: https://www.kaggle.com/datasets/sahilrajpurkar/marco-checkpoint
+> Run `pixi run python download_checkpoint.py` once after install (before `eval.py`) to stage
+> them locally under `checkpoints/` — the paths `submission.yaml` references.
+
+Make sure a fresh clone installs cleanly (`pixi install && pixi run install`,
+then `pixi run python download_checkpoint.py`) and that your entrypoint imports
+without your training code present — evaluation only ever calls your `load_fn`
+and `.act(obs)`.
 
 ---
 
