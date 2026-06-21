@@ -4,6 +4,8 @@ difficulty:
   num_parcels: 4
   fixed_poses: false
 
+max_episode_steps: 400  # ~100 x parcels; our ACT medium checkpoint was trained/validated at this
+
 randomization:
   parcel_pose:
     xy_jitter: [-0.015, 0.015]     # small spawn jitter within the inbound zone (m)

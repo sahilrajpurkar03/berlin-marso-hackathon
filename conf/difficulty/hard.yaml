@@ -7,6 +7,9 @@ difficulty:
   num_parcels: 6
   fixed_poses: false
 
+max_episode_steps: 550  # ~100 x parcels + buffer -- CONFIRM this matches what hard was actually
+                         # trained/validated with; adjust if your team used a different value
+
 randomization:
   parcel_pose:
     xy_jitter: [-0.02, 0.02]       # small spawn jitter within the inbound zone (m)

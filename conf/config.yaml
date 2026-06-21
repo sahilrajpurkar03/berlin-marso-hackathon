@@ -8,11 +8,15 @@ seed: 0
 num_envs: 8               # for eval/test; scale up as GPU allows
 device: cuda
 control_mode: pd_ee_delta_pos
-max_episode_steps: 200
+# max_episode_steps is set PER-DIFFICULTY in conf/difficulty/{easy,medium,hard}.yaml, not here --
+# Hydra's defaults list loads difficulty: before _self_, so a value set here would always win
+# and silently override whatever the difficulty config sets. Our ACT checkpoints for
+# medium/hard were trained & validated with longer episodes (more parcels need more steps),
+# so this submission needs per-difficulty episode length to score correctly without judges
+# having to pass an extra max_episode_steps= override by hand.
 
-# observation mode (state | rgb). Main track is STATE (privileged low-dim state vector);
-# rgb (scene image + proprioception) is the optional image track.
-obs_mode: state
+# observation mode (state | rgb). This submission is the image track (ACT).
+obs_mode: rgb
 
 camera:
   width: 128

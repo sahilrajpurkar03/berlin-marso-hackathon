@@ -1,0 +1,24 @@
+# SUBMISSION MANIFEST — ACT (rgb, image track)
+#
+# Checkpoints are too large to commit to GitHub, so they're hosted as a public Kaggle Dataset:
+# https://www.kaggle.com/datasets/sahilrajpurkar/marco-checkpoint
+# Run `pixi run python download_checkpoint.py` once before eval.py to stage them locally
+# under checkpoints/ (the paths below).
+#
+# One policy entrypoint serves all three levels: load_act auto-detects num_queries from each
+# checkpoint's own weights (see warehouse_sort/act_policy.py), so different levels trained with
+# different chunk sizes don't need per-level overrides.
+
+team: "glasses on"
+
+policy: warehouse_sort.act_policy:load_act
+
+levels:
+  easy:
+    checkpoint: checkpoints/final_ckpt_ACT_EASY.pt
+
+  medium:
+    checkpoint: checkpoints/final_ckpt_ACT_MEDIUM.pt
+
+  hard:
+    checkpoint: checkpoints/final_ckpt_ACT_HARD.pt

@@ -6,6 +6,8 @@ difficulty:
   num_parcels: 2
   fixed_poses: true
 
+max_episode_steps: 200
+
 randomization:
   parcel_pose:
     xy_jitter: [0.0, 0.0]
